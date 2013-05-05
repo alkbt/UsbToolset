@@ -1,0 +1,64 @@
+;;;
+;;; Sfilter
+;;;
+;;;
+;;; Copyright (c) 2000, Microsoft Corporation
+;;;
+
+[Version]
+signature   = "$Windows NT$"
+Class       = "ActivityMonitor"                         ;This is determined by the work this filter driver does
+ClassGuid   = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2}    ;This value is determined by the Class
+Provider    = %WN%
+
+[DestinationDirs]
+DefaultDestDir          = 11           ;%windir%\system32\
+UHF.DriverFiles         = 12           ;%windir%\system32\drivers
+
+;;
+;; Default install sections
+;;
+
+[DefaultInstall]
+OptionDesc          = %ServiceDesc%
+CopyFiles           = UHF.DriverFiles
+
+[DefaultInstall.Services]
+AddService          = %ServiceName%,,UHF.Service
+
+;;
+;; Default uninstall sections
+;;
+
+[DefaultUninstall]
+DelFiles   = UHF.DriverFiles
+
+[DefaultUninstall.Services]
+DelService = %ServiceName%,      ;Ensure service is stopped before deleting
+
+;
+; Services Section
+;
+
+[UHF.Service]
+DisplayName      = %ServiceName%
+Description      = %ServiceDesc%
+ServiceBinary    = %12%\uhf.sys         ;%windir%\system32\drivers\
+ServiceType      = 1                    ;SERVICE_KERNEL_DRIVER
+StartType        = 3                    ;SERVICE_DEMAND_START
+ErrorControl     = 1                    ;SERVICE_ERROR_NORMAL
+
+;
+; Copy Files
+;
+
+[UHF.DriverFiles]
+uhf.sys
+
+;;
+;; String Section
+;;
+
+[Strings]
+ServiceDesc         = "Usb hub filter"
+ServiceName         = "uhf"

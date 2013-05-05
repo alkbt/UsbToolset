@@ -1,0 +1,10 @@
+objchk_win7_x86
+obj
+/Src/*.sdf
+/Src/HubFilter/*.log
+
+/Src/HubFilter/*.suo
+
+/bin/*.sys
+
+/Src/*.suo

@@ -1,0 +1,1 @@
+set W7BASE=c:\WinDDK\7600.16385.1
