@@ -4,5 +4,5 @@ DRIVERTYPE=WDM
 
 C_DEFINES=$(C_DEFINES) -DDBG
 
-SOURCES=uhfMain.c ntstatstr.c
+SOURCES=uhfMain.c uhfPnP.c uhfDevices.c ntstatstr.c
 

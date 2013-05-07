@@ -53,11 +53,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ntstatstr.c" />
+    <ClCompile Include="uhfDevices.c" />
     <ClCompile Include="uhfMain.c" />
+    <ClCompile Include="uhfPnP.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="uhfDevices.h" />
     <ClInclude Include="uhfMain.h" />
+    <ClInclude Include="uhfPnP.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

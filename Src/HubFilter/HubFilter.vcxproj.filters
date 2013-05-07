@@ -21,12 +21,21 @@
     <ClCompile Include="ntstatstr.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="uhfPnP.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="uhfDevices.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="uhfDevices.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="uhfMain.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="uhfPnP.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
