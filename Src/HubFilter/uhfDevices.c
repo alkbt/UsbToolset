@@ -23,6 +23,7 @@ isPdoInRootList(
 #pragma alloc(PAGE, uhfAddDevice)
 #pragma alloc(PAGE, uhfDeleteDevice)
 #pragma alloc(PAGE, uhfGetPdoStringProperty)
+#pragma alloc(PAGE, uhfQueryPdoIds)
 #pragma alloc(PAGE, uhfBuildPdoIdentifiers)
 #pragma alloc(PAGE, isPdoInRootList)
 
@@ -322,6 +323,75 @@ uhfGetPdoStringProperty (
 }
 
 NTSTATUS
+uhfQueryPdoIds(
+    PDEVICE_OBJECT pdo,
+    BUS_QUERY_ID_TYPE idType,
+    PWCHAR *ids, 
+    PULONG retLength)
+{
+    NTSTATUS status;
+
+    PIRP irp;
+    PIO_STACK_LOCATION ioSp;
+
+    PWCHAR strIterator;
+
+    KEVENT Event;
+    IO_STATUS_BLOCK ioSb;
+
+    PAGED_CODE();
+
+    ASSERT(pdo);
+    ASSERT(ids);
+    ASSERT(retLength);
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+    irp = IoBuildSynchronousFsdRequest(IRP_MJ_PNP, pdo, NULL, 0, NULL, &Event, &ioSb);
+    if (!irp) {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    ioSp = IoGetNextIrpStackLocation(irp);
+    ioSp->MajorFunction = IRP_MJ_PNP;
+    ioSp->MinorFunction = IRP_MN_QUERY_ID;
+
+    ioSp->Parameters.QueryId.IdType = idType;
+
+    ObReferenceObject(pdo);
+    status = IoCallDriver(pdo, irp);
+    ObDereferenceObject(pdo);
+    if (status == STATUS_PENDING) {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        status = ioSb.Status;
+    }
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+    
+    if ((idType == BusQueryHardwareIDs) || (idType == BusQueryCompatibleIDs)) {
+        *retLength = 0;
+        strIterator = (PWCHAR)ioSb.Information;
+        while (*strIterator != 0) {
+            *retLength += (wcslen(strIterator) + 1) * sizeof(WCHAR);
+            strIterator += wcslen(strIterator) + 1;
+        }
+        *retLength += sizeof(WCHAR);
+    } else {
+        *retLength  = (wcslen((PWCHAR)ioSb.Information) + 1) * sizeof(WCHAR);
+    }
+
+    *ids = (PWCHAR)ExAllocatePoolWithTag(PagedPool, *retLength, UHF_DEV_EXT_TAG);
+    if (!*ids) {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(*ids , (PVOID)ioSb.Information, *retLength);
+    ExFreePool((PVOID)ioSb.Information);
+
+    return status;
+}
+
+NTSTATUS
 uhfBuildPdoIdentifiers(
     PDEVICE_OBJECT PhysicalDeviceObject,
     PDEVICE_OBJECT fido,
@@ -433,6 +503,8 @@ isPdoInRootList(
 
     PAGED_CODE();
 
+    ASSERT(pdo);
+
     ExAcquireFastMutex(&g_rootDevicesMutex);
     link = g_rootDevices.Flink;
     while (link != &g_rootDevices) {
@@ -449,3 +521,4 @@ isPdoInRootList(
 
     return NULL;
 }
+

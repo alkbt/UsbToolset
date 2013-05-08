@@ -207,10 +207,7 @@ uhfPnPQueryDeviceRelations(
 #endif
         for (i = 0; i < deviceRelations->Count; i++) {
 #ifdef DBG
-            status = uhfGetPdoStringProperty(deviceRelations->Objects[i],
-                                            DevicePropertyHardwareID,
-                                            &deviceName,
-                                            &retLength);
+            status = uhfQueryPdoIds(deviceRelations->Objects[i], BusQueryDeviceID, &deviceName, &retLength);
             if (NT_SUCCESS(status)) {
                 DbgPrint("\t\t0x%p %ws\n", deviceRelations->Objects[i], deviceName);
                 ExFreePool(deviceName);
@@ -232,3 +229,4 @@ uhfPnPQueryDeviceRelations(
 
     return status;
 }
+

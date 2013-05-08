@@ -55,4 +55,11 @@ uhfGetPdoStringProperty(
     PULONG retLength);
 
 
+NTSTATUS
+uhfQueryPdoIds(
+    PDEVICE_OBJECT pdo,
+    BUS_QUERY_ID_TYPE idType,
+    PWCHAR *ids, 
+    PULONG retLength);
+
 #endif //__UHF_DEVICES_H__
