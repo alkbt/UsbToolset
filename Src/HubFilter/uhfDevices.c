@@ -23,6 +23,7 @@ isPdoInRootList(
 #pragma alloc(PAGE, uhfAddDevice)
 #pragma alloc(PAGE, uhfDeleteDevice)
 #pragma alloc(PAGE, uhfGetPdoStringProperty)
+#pragma alloc(PAGE, uhfQueryPdoText)
 #pragma alloc(PAGE, uhfQueryPdoIds)
 #pragma alloc(PAGE, uhfBuildPdoIdentifiers)
 #pragma alloc(PAGE, isPdoInRootList)
@@ -44,16 +45,16 @@ uhfAddDevice(
 
     PAGED_CODE();
 
-#ifdef DBG
-    DbgPrint("[uhf] uhfAddDevice(0x%p)\n", pdo);
-#endif
     __try {
         fidoExt = isPdoInRootList(pdo);
         if (fidoExt) {
-            DbgPrint("\t This is hub\n", pdo);
             fidoExt->DeviceRole = UHF_DEVICE_ROLE_HUB_FiDO;
             return STATUS_SUCCESS;
         }
+
+#ifdef DBG
+    DbgPrint("[uhf] uhfAddDevice(0x%p)\n", pdo);
+#endif
 
         status = IoCreateDevice(DriverObject, 
                                 sizeof(UHF_DEVICE_EXT ), 
@@ -80,12 +81,6 @@ uhfAddDevice(
 
 
         IoInitializeRemoveLock(&fidoExt->RemoveLock, UHF_DEV_EXT_TAG, 0, 0);
-
-        fidoExt->DeviceClassName = NULL;
-        fidoExt->DeviceDeviceDescription = NULL;
-        fidoExt->deviceHardwareId = NULL;
-        fidoExt->deviceCompatibleIds = NULL;
-        fidoExt->DeviceManufacturer = NULL;
 
         status = uhfBuildPdoIdentifiers(pdo, fido, fidoExt);
         if (!NT_SUCCESS(status)) {
@@ -144,10 +139,9 @@ uhfAddChildDevice(
     }
 
 #ifdef DBG
-    DbgPrint("[uhf] uhfAddChildDevice(0x%p, 0x%p)\n",
-            parentDevExt->pdo,
-            pdo);
+    DbgPrint("[uhf] uhfAddChildDevice(0x%p, 0x%p)\n", parentDevExt->pdo, pdo);
 #endif
+
     __try {
         status = IoCreateDevice(DriverObject, 
                                 sizeof(UHF_DEVICE_EXT ), 
@@ -175,12 +169,6 @@ uhfAddChildDevice(
         ExReleaseFastMutex(&g_rootDevicesMutex);
 
         IoInitializeRemoveLock(&fidoExt->RemoveLock, UHF_DEV_EXT_TAG, 0, 0);
-
-        fidoExt->DeviceClassName = NULL;
-        fidoExt->DeviceDeviceDescription = NULL;
-        fidoExt->deviceHardwareId = NULL;
-        fidoExt->deviceCompatibleIds = NULL;
-        fidoExt->DeviceManufacturer = NULL;
 
         status = uhfBuildPdoIdentifiers(pdo, fido, fidoExt);
         if (!NT_SUCCESS(status)) {
@@ -233,30 +221,39 @@ uhfDeleteDevice(
     PAGED_CODE();
 
     devExt = (PUHF_DEVICE_EXT)device->DeviceExtension;
-    if (devExt->DeviceClassName) {
-        ExFreePoolWithTag(devExt->DeviceClassName, UHF_DEV_EXT_TAG);
-        devExt->DeviceClassName = NULL;
+    if (devExt->pdoDescription.deviceId.Buffer) {
+        ExFreePoolWithTag(devExt->pdoDescription.deviceId.Buffer, UHF_DEV_EXT_TAG);
     }
 
-    if (devExt->DeviceDeviceDescription) {
-        ExFreePoolWithTag(devExt->DeviceDeviceDescription, UHF_DEV_EXT_TAG);
-        devExt->DeviceDeviceDescription = NULL;
+    if (devExt->pdoDescription.hardwareIds.Buffer) {
+        ExFreePoolWithTag(devExt->pdoDescription.hardwareIds.Buffer, UHF_DEV_EXT_TAG);
     }
 
-    if (devExt->deviceHardwareId) {
-        ExFreePoolWithTag(devExt->deviceHardwareId, UHF_DEV_EXT_TAG);
-        devExt->deviceHardwareId = NULL;
+    if (devExt->pdoDescription.compatibleIds.Buffer) {
+        ExFreePoolWithTag(devExt->pdoDescription.compatibleIds.Buffer, UHF_DEV_EXT_TAG);
     }
 
-    if (devExt->DeviceManufacturer) {
-        ExFreePoolWithTag(devExt->DeviceManufacturer, UHF_DEV_EXT_TAG);
-        devExt->DeviceManufacturer = NULL;
+    if (devExt->pdoDescription.instanceId.Buffer) {
+        ExFreePoolWithTag(devExt->pdoDescription.instanceId.Buffer, UHF_DEV_EXT_TAG);
     }
 
-    if (devExt->deviceCompatibleIds) {
-        ExFreePoolWithTag(devExt->deviceCompatibleIds, UHF_DEV_EXT_TAG);
-        devExt->deviceCompatibleIds = NULL;
+    if (devExt->pdoDescription.serialNumber.Buffer) {
+        ExFreePoolWithTag(devExt->pdoDescription.serialNumber.Buffer, UHF_DEV_EXT_TAG);
     }
+
+    if (devExt->pdoDescription.containerId.Buffer) {
+        ExFreePoolWithTag(devExt->pdoDescription.containerId.Buffer, UHF_DEV_EXT_TAG);
+    }
+
+    if (devExt->pdoDescription.description.Buffer) {
+        ExFreePoolWithTag(devExt->pdoDescription.description.Buffer, UHF_DEV_EXT_TAG);
+    }
+
+    if (devExt->pdoDescription.location.Buffer) {
+        ExFreePoolWithTag(devExt->pdoDescription.location.Buffer, UHF_DEV_EXT_TAG);
+    }
+
+    RtlZeroMemory(&devExt->pdoDescription, sizeof(devExt->pdoDescription));
 
     ExAcquireFastMutex(&g_rootDevicesMutex);
     RemoveEntryList(&devExt->gLink);
@@ -345,6 +342,9 @@ uhfQueryPdoIds(
     ASSERT(ids);
     ASSERT(retLength);
 
+    *ids = NULL;
+    *retLength = 0;
+
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
     irp = IoBuildSynchronousFsdRequest(IRP_MJ_PNP, pdo, NULL, 0, NULL, &Event, &ioSb);
     if (!irp) {
@@ -364,7 +364,7 @@ uhfQueryPdoIds(
         KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
         status = ioSb.Status;
     }
-    if (!NT_SUCCESS(status)) {
+    if (!NT_SUCCESS(status) || (ioSb.Information == 0)) {
         return status;
     }
     
@@ -392,105 +392,186 @@ uhfQueryPdoIds(
 }
 
 NTSTATUS
+uhfQueryPdoText(
+    PDEVICE_OBJECT pdo,
+    DEVICE_TEXT_TYPE textType,
+    PWCHAR *text, 
+    PULONG retLength)
+{
+    NTSTATUS status;
+
+    PIRP irp;
+    PIO_STACK_LOCATION ioSp;
+
+    PWCHAR strIterator;
+
+    KEVENT Event;
+    IO_STATUS_BLOCK ioSb;
+
+    PAGED_CODE();
+
+    ASSERT(pdo);
+    ASSERT(text);
+    ASSERT(retLength);
+
+    *text = NULL;
+    *retLength = 0;
+
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+    irp = IoBuildSynchronousFsdRequest(IRP_MJ_PNP, pdo, NULL, 0, NULL, &Event, &ioSb);
+    if (!irp) {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    ioSp = IoGetNextIrpStackLocation(irp);
+    ioSp->MajorFunction = IRP_MJ_PNP;
+    ioSp->MinorFunction = IRP_MN_QUERY_DEVICE_TEXT;
+
+    ioSp->Parameters.QueryDeviceText.DeviceTextType = textType;
+    ioSp->Parameters.QueryDeviceText.LocaleId = MAKELCID(MAKELANGID(LANG_NEUTRAL, SUBLANG_CUSTOM_DEFAULT), SORT_DEFAULT);
+
+    ObReferenceObject(pdo);
+    status = IoCallDriver(pdo, irp);
+    ObDereferenceObject(pdo);
+    if (status == STATUS_PENDING) {
+        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        status = ioSb.Status;
+    }
+    if (!NT_SUCCESS(status) || (ioSb.Information == 0)) {
+        return status;
+    }
+    
+    *retLength  = (wcslen((PWCHAR)ioSb.Information) + 1) * sizeof(WCHAR);
+
+    *text = (PWCHAR)ExAllocatePoolWithTag(PagedPool, *retLength, UHF_DEV_EXT_TAG);
+    if (!*text) {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlCopyMemory(*text, (PVOID)ioSb.Information, *retLength);
+    ExFreePool((PVOID)ioSb.Information);
+
+    return status;
+}
+
+
+NTSTATUS
 uhfBuildPdoIdentifiers(
-    PDEVICE_OBJECT PhysicalDeviceObject,
+    PDEVICE_OBJECT pdo,
     PDEVICE_OBJECT fido,
     PUHF_DEVICE_EXT fidoExt)
 {
     NTSTATUS status = STATUS_SUCCESS;
     ULONG retLength;
 
-    PWCHAR str;
+    PWCHAR id;
 
     PAGED_CODE();
 
-    __try {
-        uhfGetPdoStringProperty(PhysicalDeviceObject, 
-                                DevicePropertyClassName, 
-                                &fidoExt->DeviceClassName, 
-                                &retLength);
-        uhfGetPdoStringProperty(PhysicalDeviceObject, 
-                                DevicePropertyDeviceDescription, 
-                                &fidoExt->DeviceDeviceDescription, 
-                                &retLength);
-        uhfGetPdoStringProperty(PhysicalDeviceObject, 
-                                DevicePropertyManufacturer, 
-                                &fidoExt->DeviceManufacturer, 
-                                &retLength);
+    RtlZeroMemory(&fidoExt->pdoDescription, sizeof(fidoExt->pdoDescription));
 
-        uhfGetPdoStringProperty(PhysicalDeviceObject, 
-                                DevicePropertyHardwareID, 
-                                &fidoExt->deviceHardwareId, 
-                                &retLength);
-        uhfGetPdoStringProperty(PhysicalDeviceObject, 
-                                DevicePropertyCompatibleIDs, 
-                                &fidoExt->deviceCompatibleIds, 
-                                &retLength);
-/*
+    status = uhfQueryPdoIds(pdo, BusQueryDeviceID, &id, &retLength);
+    if (NT_SUCCESS(status) && id) {
+        fidoExt->pdoDescription.deviceId.Buffer = id;
+        fidoExt->pdoDescription.deviceId.Length = (USHORT)retLength;
+        fidoExt->pdoDescription.deviceId.MaximumLength = (USHORT)retLength;
+    }
+
+    status = uhfQueryPdoIds(pdo, BusQueryHardwareIDs, &id, &retLength);
+    if (NT_SUCCESS(status) && id) {
+        fidoExt->pdoDescription.hardwareIds.Buffer = id;
+        fidoExt->pdoDescription.hardwareIds.Length = (USHORT)retLength;
+        fidoExt->pdoDescription.hardwareIds.MaximumLength = (USHORT)retLength;
+    }
+
+    status = uhfQueryPdoIds(pdo, BusQueryCompatibleIDs, &id, &retLength);
+    if (NT_SUCCESS(status) && id) {
+        fidoExt->pdoDescription.compatibleIds.Buffer = id;
+        fidoExt->pdoDescription.compatibleIds.Length = (USHORT)retLength;
+        fidoExt->pdoDescription.compatibleIds.MaximumLength = (USHORT)retLength;
+    }
+
+    status = uhfQueryPdoIds(pdo, BusQueryInstanceID, &id, &retLength);
+    if (NT_SUCCESS(status) && id) {
+        fidoExt->pdoDescription.instanceId.Buffer = id;
+        fidoExt->pdoDescription.instanceId.Length = (USHORT)retLength;
+        fidoExt->pdoDescription.instanceId.MaximumLength = (USHORT)retLength;
+    }
+
+    status = uhfQueryPdoIds(pdo, BusQueryDeviceSerialNumber, &id, &retLength);
+    if (NT_SUCCESS(status) && id) {
+        fidoExt->pdoDescription.serialNumber.Buffer = id;
+        fidoExt->pdoDescription.serialNumber.Length = (USHORT)retLength;
+        fidoExt->pdoDescription.serialNumber.MaximumLength = (USHORT)retLength;
+    }
+
+    status = uhfQueryPdoIds(pdo, BusQueryContainerID, &id, &retLength);
+    if (NT_SUCCESS(status) && id) {
+        fidoExt->pdoDescription.containerId.Buffer = id;
+        fidoExt->pdoDescription.containerId.Length = (USHORT)retLength;
+        fidoExt->pdoDescription.containerId.MaximumLength = (USHORT)retLength;
+    }
+
+    status = uhfQueryPdoText(pdo, DeviceTextDescription, &id, &retLength);
+    if (NT_SUCCESS(status) && id) {
+        fidoExt->pdoDescription.description.Buffer = id;
+        fidoExt->pdoDescription.description.Length = (USHORT)retLength;
+        fidoExt->pdoDescription.description.MaximumLength = (USHORT)retLength;
+    }
+
+    status = uhfQueryPdoText(pdo, DeviceTextLocationInformation, &id, &retLength);
+    if (NT_SUCCESS(status) && id) {
+        fidoExt->pdoDescription.location.Buffer = id;
+        fidoExt->pdoDescription.location.Length = (USHORT)retLength;
+        fidoExt->pdoDescription.location.MaximumLength = (USHORT)retLength;
+    }
+
+    status = STATUS_SUCCESS;
+
 #ifdef DBG
-        if (fidoExt->DeviceDeviceDescription) {
-            DbgPrint("\tDescription \"%ws\"\n", fidoExt->DeviceDeviceDescription);
-        }
+    if (fidoExt->pdoDescription.deviceId.Buffer) {
+        DbgPrint("\tdeviceId: \"%ws\"\n", fidoExt->pdoDescription.deviceId.Buffer);
+    }
 
-        DbgPrint("\tdriver \"%wZ\"\n", &PhysicalDeviceObject->DriverObject->DriverName);
-        
-
-        if (fidoExt->DeviceClassName) {
-            DbgPrint("\tClass \"%ws\"\n", fidoExt->DeviceClassName);
-        }
-
-        if (fidoExt->DeviceManufacturer) {
-            DbgPrint("\tManufacturer \"%ws\"\n", fidoExt->DeviceManufacturer);
-        }
-
-        if (fidoExt->deviceHardwareId) {
-            DbgPrint("\tHardware id \"%ws\"\n", fidoExt->deviceHardwareId);
-        }
-
-        if (fidoExt->deviceCompatibleIds) {
-            DbgPrint("\tCompatible ids:\n");
-            str = fidoExt->deviceCompatibleIds;
-            while (*str) {
-                DbgPrint("\t\t\"%ws\"\n", str);
-                str += (wcslen(str) + 1);
-            }
-            
-        }
-
-#endif
-*/
-    } __finally {
-        if (!NT_SUCCESS(status)) {
-#ifdef DBG
-            DbgPrint("[uhf] uhfBuildPdoIdentifiers ERROR(%s)\n", OsrNTStatusToString(status));
-#endif
-            if (fidoExt->DeviceClassName) {
-                ExFreePoolWithTag(fidoExt->DeviceClassName, UHF_DEV_EXT_TAG);
-                fidoExt->DeviceClassName = NULL;
-            }
-
-            if (fidoExt->DeviceDeviceDescription) {
-                ExFreePoolWithTag(fidoExt->DeviceDeviceDescription, UHF_DEV_EXT_TAG);
-                fidoExt->DeviceDeviceDescription = NULL;
-            }
-
-            if (fidoExt->deviceHardwareId) {
-                ExFreePoolWithTag(fidoExt->deviceHardwareId, UHF_DEV_EXT_TAG);
-                fidoExt->deviceHardwareId = NULL;
-            }
-
-            if (fidoExt->DeviceManufacturer) {
-                ExFreePoolWithTag(fidoExt->DeviceManufacturer, UHF_DEV_EXT_TAG);
-                fidoExt->DeviceManufacturer = NULL;
-            }
-
-            if (fidoExt->deviceCompatibleIds) {
-                ExFreePoolWithTag(fidoExt->deviceCompatibleIds, UHF_DEV_EXT_TAG);
-                fidoExt->deviceCompatibleIds = NULL;
-            }
+    if (fidoExt->pdoDescription.hardwareIds.Buffer) {
+        DbgPrint("\thardwareIds:\n");
+        id = fidoExt->pdoDescription.hardwareIds.Buffer;
+        while (*id) {
+            DbgPrint("\t\t\"%ws\"\n", id);
+            id += wcslen(id) + 1;
         }
     }
 
+    if (fidoExt->pdoDescription.compatibleIds.Buffer) {
+        DbgPrint("\tcompatibleIds:\n");
+        id = fidoExt->pdoDescription.compatibleIds.Buffer;
+        while (*id) {
+            DbgPrint("\t\t\"%ws\"\n", id);
+            id += wcslen(id) + 1;
+        }
+    }
+
+    if (fidoExt->pdoDescription.instanceId.Buffer) {
+        DbgPrint("\tinstanceId: \"%ws\"\n", fidoExt->pdoDescription.instanceId.Buffer);
+    }
+
+    if (fidoExt->pdoDescription.serialNumber.Buffer) {
+        DbgPrint("\tserialNumber: \"%ws\"\n", fidoExt->pdoDescription.serialNumber.Buffer);
+    }
+
+    if (fidoExt->pdoDescription.containerId.Buffer) {
+        DbgPrint("\tcontainerId: \"%ws\"\n", fidoExt->pdoDescription.containerId.Buffer);
+    }
+
+    if (fidoExt->pdoDescription.description.Buffer) {
+        DbgPrint("\tdescription: \"%ws\"\n", fidoExt->pdoDescription.description.Buffer);
+    }
+
+    if (fidoExt->pdoDescription.location.Buffer) {
+        DbgPrint("\tlocation: \"%ws\"\n", fidoExt->pdoDescription.location.Buffer);
+    }
+
+#endif
     return status;
 }
 

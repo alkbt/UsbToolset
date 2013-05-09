@@ -7,6 +7,17 @@
 extern LIST_ENTRY g_rootDevices;
 extern FAST_MUTEX g_rootDevicesMutex;
 
+typedef struct _UHF_PDO_DESCRIPTION {
+    UNICODE_STRING deviceId;
+    UNICODE_STRING hardwareIds;
+    UNICODE_STRING compatibleIds;
+    UNICODE_STRING instanceId;
+    UNICODE_STRING serialNumber;
+    UNICODE_STRING containerId;
+    UNICODE_STRING description;
+    UNICODE_STRING location;
+} UHF_PDO_DESCRIPTION, *PUHF_PDO_DESCRIPTION;
+
 typedef struct _UHF_DEVICE_EXT {
     LIST_ENTRY gLink;
     LIST_ENTRY childs;
@@ -22,12 +33,7 @@ typedef struct _UHF_DEVICE_EXT {
 
     PDEVICE_OBJECT pdo;
 
-    PWCHAR DeviceClassName;
-    PWCHAR DeviceDeviceDescription;
-    PWCHAR DeviceManufacturer;
-
-    PWCHAR deviceHardwareId;
-    PWCHAR deviceCompatibleIds;
+    UHF_PDO_DESCRIPTION pdoDescription;
 } UHF_DEVICE_EXT, *PUHF_DEVICE_EXT;
 
 #define UHF_DEV_EXT_TAG ' fhu'
@@ -54,12 +60,22 @@ uhfGetPdoStringProperty(
     PWCHAR *string,
     PULONG retLength);
 
-
 NTSTATUS
 uhfQueryPdoIds(
     PDEVICE_OBJECT pdo,
     BUS_QUERY_ID_TYPE idType,
     PWCHAR *ids, 
     PULONG retLength);
+
+NTSTATUS
+uhfQueryPdoText(
+    PDEVICE_OBJECT pdo,
+    DEVICE_TEXT_TYPE textType,
+    PWCHAR *text, 
+    PULONG retLength);
+
+PUHF_DEVICE_EXT
+isPdoInRootList(
+    PDEVICE_OBJECT pdo);
 
 #endif //__UHF_DEVICES_H__

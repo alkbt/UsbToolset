@@ -122,10 +122,6 @@ uhfPnPRemoveDevice(
     IoDetachDevice(devExt->NextDevice);
     uhfDeleteDevice(DeviceObject);
 
-#ifdef DBG
-    DbgPrint("[uhf]\tIRP_MN_REMOVE_DEVICE(0x%p) DONE! (%s)\n", 
-            devExt->pdo, OsrNTStatusToString(status));
-#endif
     return status;
 }
 
@@ -155,6 +151,7 @@ uhfPnPQueryDeviceRelations(
     ULONG i;
     PDEVICE_RELATIONS deviceRelations;
     PWCHAR deviceName;
+    PWCHAR strIterator;
     ULONG retLength;
 
     PAGED_CODE();
@@ -170,11 +167,6 @@ uhfPnPQueryDeviceRelations(
         status = IoCallDriver(devExt->NextDevice, Irp);
         return status;
     }
-
-#ifdef DBG
-    DbgPrint("[uhf]\tIRP_MN_QUERY_DEVICE_RELATIONS(0x%p):BusRelations\n", 
-            devExt->pdo);
-#endif
 
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
 
@@ -202,28 +194,12 @@ uhfPnPQueryDeviceRelations(
 
     if (NT_SUCCESS(Irp->IoStatus.Status) && (Irp->IoStatus.Information != 0)) {
         deviceRelations = (PDEVICE_RELATIONS)Irp->IoStatus.Information;
-#ifdef DBG
-        DbgPrint("\tEnumerated %d objects:\n", deviceRelations->Count);
-#endif
         for (i = 0; i < deviceRelations->Count; i++) {
-#ifdef DBG
-            status = uhfQueryPdoIds(deviceRelations->Objects[i], BusQueryDeviceID, &deviceName, &retLength);
-            if (NT_SUCCESS(status)) {
-                DbgPrint("\t\t0x%p %ws\n", deviceRelations->Objects[i], deviceName);
-                ExFreePool(deviceName);
-            } else {
-                DbgPrint("\t\t0x%p %s\n", deviceRelations->Objects[i], OsrNTStatusToString(status));
+            if (!isPdoInRootList(deviceRelations->Objects[i])) {
+                uhfAddChildDevice(g_DriverObject, devExt, deviceRelations->Objects[i]);
             }
-#endif
-
-            uhfAddChildDevice(g_DriverObject, devExt, deviceRelations->Objects[i]);
         }
     } 
-#ifdef DBG 
-    else {
-        DbgPrint("\tNo child devices\n");
-    }
-#endif
     status = Irp->IoStatus.Status;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
