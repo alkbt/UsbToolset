@@ -16,9 +16,26 @@ uhfBuildPdoIdentifiers(
     PDEVICE_OBJECT fido,
     PUHF_DEVICE_EXT fidoExt);
 
+VOID
+uhfAddPdoInGlobalList(
+    PUHF_DEVICE_EXT devExt);
+
+VOID
+uhfRemovePdoFromGlobalList(
+    PUHF_DEVICE_EXT devExt);
+
 PUHF_DEVICE_EXT 
-isPdoInRootList(
-    PDEVICE_OBJECT pdo);
+uhfIsPdoInChildList(
+    PUHF_DEVICE_EXT devExt);
+
+VOID 
+uhfAddPdoToChildList(
+    PUHF_DEVICE_EXT parentDevExt,
+    PUHF_DEVICE_EXT devExt);
+
+VOID 
+uhfRemovePdoFromChildList(
+    PUHF_DEVICE_EXT devExt);
 
 #pragma alloc(PAGE, uhfAddDevice)
 #pragma alloc(PAGE, uhfDeleteDevice)
@@ -26,7 +43,16 @@ isPdoInRootList(
 #pragma alloc(PAGE, uhfQueryPdoText)
 #pragma alloc(PAGE, uhfQueryPdoIds)
 #pragma alloc(PAGE, uhfBuildPdoIdentifiers)
-#pragma alloc(PAGE, isPdoInRootList)
+
+#pragma alloc(PAGE, uhfIsPdoInGlobalList)
+#pragma alloc(PAGE, uhfAddPdoInGlobalList)
+#pragma alloc(PAGE, uhfRemovePdoFromGlobalList)
+#pragma alloc(PAGE, uhfIsPdoInChildList)
+#pragma alloc(PAGE, uhfAddPdoToChildList)
+#pragma alloc(PAGE, uhfRemovePdoFromChildList)
+
+LIST_ENTRY g_pdoList;
+FAST_MUTEX g_pdoListMutex;
 
 LIST_ENTRY g_rootDevices;
 FAST_MUTEX g_rootDevicesMutex;
@@ -46,7 +72,7 @@ uhfAddDevice(
     PAGED_CODE();
 
     __try {
-        fidoExt = isPdoInRootList(pdo);
+        fidoExt = uhfIsPdoInGlobalList(pdo);
         if (fidoExt) {
             fidoExt->DeviceRole = UHF_DEVICE_ROLE_HUB_FiDO;
             return STATUS_SUCCESS;
@@ -71,14 +97,15 @@ uhfAddDevice(
         }
 
         fidoExt = (PUHF_DEVICE_EXT)fido->DeviceExtension;
+        RtlZeroMemory(fidoExt, sizeof(UHF_DEVICE_EXT));
+
         fidoExt->DeviceRole = UHF_DEVICE_ROLE_HUB_FiDO;
         fidoExt->pdo = pdo;
         ExInitializeFastMutex(&fidoExt->fastMutex);
         InitializeListHead(&fidoExt->childs);
-        ExAcquireFastMutex(&g_rootDevicesMutex);
-        InsertHeadList(&g_rootDevices, &fidoExt->gLink);
-        ExReleaseFastMutex(&g_rootDevicesMutex);
-
+        
+        uhfAddPdoInGlobalList(fidoExt);
+        uhfAddPdoToChildList(NULL, fidoExt);
 
         IoInitializeRemoveLock(&fidoExt->RemoveLock, UHF_DEV_EXT_TAG, 0, 0);
 
@@ -97,10 +124,12 @@ uhfAddDevice(
         if (!NT_SUCCESS(status)) {
             if (fido) {
                 if (fidoExt) {
-                    if (isPdoInRootList(fidoExt->pdo)) {
-                        ExAcquireFastMutex(&g_rootDevicesMutex);
-                        RemoveEntryList(&fidoExt->gLink);
-                        ExReleaseFastMutex(&g_rootDevicesMutex);
+                    if (uhfIsPdoInGlobalList(fidoExt->pdo)) {
+                        uhfRemovePdoFromGlobalList(fidoExt);
+                    }
+
+                    if (uhfIsPdoInChildList(fidoExt)) {
+                        uhfRemovePdoFromChildList(fidoExt);
                     }
 
                     if (fidoExt->NextDevice) {
@@ -134,7 +163,7 @@ uhfAddChildDevice(
     ASSERT(parentDevExt);
     ASSERT(pdo);
 
-    if (isPdoInRootList(pdo)) {
+    if (uhfIsPdoInGlobalList(pdo)) {
         return STATUS_SUCCESS;
     }
 
@@ -164,9 +193,8 @@ uhfAddChildDevice(
         ExInitializeFastMutex(&fidoExt->fastMutex);
         InitializeListHead(&fidoExt->childs);
 
-        ExAcquireFastMutex(&g_rootDevicesMutex);
-        InsertHeadList(&g_rootDevices, &fidoExt->gLink);
-        ExReleaseFastMutex(&g_rootDevicesMutex);
+        uhfAddPdoInGlobalList(fidoExt);
+        uhfAddPdoToChildList(parentDevExt, fidoExt);
 
         IoInitializeRemoveLock(&fidoExt->RemoveLock, UHF_DEV_EXT_TAG, 0, 0);
 
@@ -185,10 +213,8 @@ uhfAddChildDevice(
         if (!NT_SUCCESS(status)) {
             if (fido) {
                 if (fidoExt) {
-                    if (isPdoInRootList(fidoExt->pdo)) {
-                        ExAcquireFastMutex(&g_rootDevicesMutex);
-                        RemoveEntryList(&fidoExt->gLink);
-                        ExReleaseFastMutex(&g_rootDevicesMutex);
+                    if (uhfIsPdoInGlobalList(fidoExt->pdo)) {
+                        uhfRemovePdoFromGlobalList(fidoExt);
                     }
 
                     if (fidoExt->NextDevice) {
@@ -200,11 +226,6 @@ uhfAddChildDevice(
             }
         }
     }
-
-    fidoExt->parent = parentDevExt;
-    ExAcquireFastMutex(&parentDevExt->fastMutex);
-    InsertTailList(&parentDevExt->childs, &fidoExt->siblings);
-    ExReleaseFastMutex(&parentDevExt->fastMutex);
 
     return STATUS_SUCCESS;
 }
@@ -221,6 +242,15 @@ uhfDeleteDevice(
     PAGED_CODE();
 
     devExt = (PUHF_DEVICE_EXT)device->DeviceExtension;
+
+#ifdef DBG
+    DbgPrint("[uhf]\tuhfDeleteDevice(0x%p):\"%ws\"\n", 
+            devExt->pdo, devExt->pdoDescription.deviceId.Buffer);
+    if (devExt->pdoDescription.description.Buffer) {
+        DbgPrint("\t\"%ws\"\n", devExt->pdoDescription.description.Buffer);
+    }
+#endif
+    
     if (devExt->pdoDescription.deviceId.Buffer) {
         ExFreePoolWithTag(devExt->pdoDescription.deviceId.Buffer, UHF_DEV_EXT_TAG);
     }
@@ -255,15 +285,8 @@ uhfDeleteDevice(
 
     RtlZeroMemory(&devExt->pdoDescription, sizeof(devExt->pdoDescription));
 
-    ExAcquireFastMutex(&g_rootDevicesMutex);
-    RemoveEntryList(&devExt->gLink);
-    ExReleaseFastMutex(&g_rootDevicesMutex);
-
-    if (devExt->parent) {
-        ExAcquireFastMutex(&devExt->parent->fastMutex);
-        RemoveEntryList(&devExt->childs);
-        ExReleaseFastMutex(&devExt->parent->fastMutex);
-    }
+    uhfRemovePdoFromGlobalList(devExt);
+    uhfRemovePdoFromChildList(devExt);
 
     IoDeleteDevice(device);
 }
@@ -576,7 +599,7 @@ uhfBuildPdoIdentifiers(
 }
 
 PUHF_DEVICE_EXT
-isPdoInRootList(
+uhfIsPdoInGlobalList(
     PDEVICE_OBJECT pdo)
 {
     PLIST_ENTRY link;
@@ -586,20 +609,125 @@ isPdoInRootList(
 
     ASSERT(pdo);
 
-    ExAcquireFastMutex(&g_rootDevicesMutex);
-    link = g_rootDevices.Flink;
-    while (link != &g_rootDevices) {
+    ExAcquireFastMutex(&g_pdoListMutex);
+    link = g_pdoList.Flink;
+    while (link != &g_pdoList) {
         devExt = CONTAINING_RECORD(link, UHF_DEVICE_EXT, gLink);
         if (devExt->pdo == pdo) {
-            ExReleaseFastMutex(&g_rootDevicesMutex);
+            ExReleaseFastMutex(&g_pdoListMutex);
             return devExt;
         }
 
         link = link->Flink;
     }
 
-    ExReleaseFastMutex(&g_rootDevicesMutex);
+    ExReleaseFastMutex(&g_pdoListMutex);
 
     return NULL;
 }
 
+VOID
+uhfAddPdoInGlobalList(
+    PUHF_DEVICE_EXT devExt)
+{
+    PAGED_CODE();
+
+    ASSERT(devExt);
+
+    ExAcquireFastMutex(&g_pdoListMutex);
+    InsertTailList(&g_pdoList, &devExt->gLink);
+    ExReleaseFastMutex(&g_pdoListMutex);
+}
+
+VOID
+uhfRemovePdoFromGlobalList(
+    PUHF_DEVICE_EXT devExt)
+{
+    PAGED_CODE();
+
+    ASSERT(devExt);
+
+    ExAcquireFastMutex(&g_pdoListMutex);
+    RemoveEntryList(&devExt->gLink);
+    ExReleaseFastMutex(&g_pdoListMutex);
+}
+
+PUHF_DEVICE_EXT 
+uhfIsPdoInChildList(
+    PUHF_DEVICE_EXT devExt)
+{
+    PLIST_ENTRY link;
+    PUHF_DEVICE_EXT devExtIterator;
+
+    PLIST_ENTRY listHead;
+    PFAST_MUTEX mutex;
+
+    PAGED_CODE();
+
+    ASSERT(devExt);
+
+    if (devExt->parent) {
+        listHead = &devExt->parent->childs;
+        mutex = &devExt->parent->fastMutex;
+    } else {
+        listHead = &g_rootDevices;
+        mutex = &g_rootDevicesMutex;
+    }
+
+    ExAcquireFastMutex(mutex);
+    link = listHead->Flink;
+    while (link != listHead) {
+        devExtIterator = CONTAINING_RECORD(link, UHF_DEVICE_EXT, childs);
+        if (devExt == devExtIterator) {
+            ExReleaseFastMutex(mutex);
+            return devExt;
+        }
+
+        link = link->Flink;
+    }
+
+    ExReleaseFastMutex(mutex);
+
+    return NULL;
+}
+
+VOID 
+uhfAddPdoToChildList(
+    PUHF_DEVICE_EXT parentDevExt,
+    PUHF_DEVICE_EXT devExt)
+{
+    PAGED_CODE();
+
+    ASSERT(devExt);
+
+    if (parentDevExt) {
+        ExAcquireFastMutex(&parentDevExt->fastMutex);
+        InsertTailList(&parentDevExt->childs, &devExt->siblings);
+        ExReleaseFastMutex(&parentDevExt->fastMutex);
+        devExt->parent = parentDevExt;
+    } else {
+        ExAcquireFastMutex(&g_rootDevicesMutex);
+        InsertTailList(&g_rootDevices, &devExt->siblings);
+        ExReleaseFastMutex(&g_rootDevicesMutex);
+        devExt->parent = NULL;
+    }
+}
+
+VOID 
+uhfRemovePdoFromChildList(
+    PUHF_DEVICE_EXT devExt)
+{
+    PAGED_CODE();
+
+    ASSERT(devExt);
+
+    if (devExt->parent) {
+        ExAcquireFastMutex(&devExt->parent->fastMutex);
+        RemoveEntryList(&devExt->siblings);
+        ExReleaseFastMutex(&devExt->parent->fastMutex);
+    } else {
+        ExAcquireFastMutex(&g_rootDevicesMutex);
+        RemoveEntryList(&devExt->siblings);
+        ExReleaseFastMutex(&g_rootDevicesMutex);
+    }
+}

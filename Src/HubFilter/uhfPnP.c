@@ -110,10 +110,6 @@ uhfPnPRemoveDevice(
 
     PAGED_CODE();
 
-#ifdef DBG
-    DbgPrint("[uhf]\tIRP_MN_REMOVE_DEVICE(0x%p)\n", 
-            devExt->pdo);
-#endif
     IoSkipCurrentIrpStackLocation(Irp);
 
     status = IoCallDriver(devExt->NextDevice, Irp);
@@ -195,7 +191,7 @@ uhfPnPQueryDeviceRelations(
     if (NT_SUCCESS(Irp->IoStatus.Status) && (Irp->IoStatus.Information != 0)) {
         deviceRelations = (PDEVICE_RELATIONS)Irp->IoStatus.Information;
         for (i = 0; i < deviceRelations->Count; i++) {
-            if (!isPdoInRootList(deviceRelations->Objects[i])) {
+            if (!uhfIsPdoInGlobalList(deviceRelations->Objects[i])) {
                 uhfAddChildDevice(g_DriverObject, devExt, deviceRelations->Objects[i]);
             }
         }

@@ -4,8 +4,12 @@
 #define UHF_DEVICE_ROLE_HUB_FiDO 0x1
 #define UHF_DEVICE_ROLE_DEVICE_FiDO 0x2
 
+
 extern LIST_ENTRY g_rootDevices;
 extern FAST_MUTEX g_rootDevicesMutex;
+
+LIST_ENTRY g_pdoList;
+FAST_MUTEX g_pdoListMutex;
 
 typedef struct _UHF_PDO_DESCRIPTION {
     UNICODE_STRING deviceId;
@@ -75,7 +79,7 @@ uhfQueryPdoText(
     PULONG retLength);
 
 PUHF_DEVICE_EXT
-isPdoInRootList(
+uhfIsPdoInGlobalList(
     PDEVICE_OBJECT pdo);
 
 #endif //__UHF_DEVICES_H__

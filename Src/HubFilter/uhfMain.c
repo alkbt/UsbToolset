@@ -27,6 +27,10 @@ DriverEntry(
     DbgPrint("[uhf] DriverEntry..\n");
 #endif
     g_DriverObject = DriverObject;
+
+    InitializeListHead(&g_pdoList);
+    ExInitializeFastMutex(&g_pdoListMutex);
+
     InitializeListHead(&g_rootDevices);
     ExInitializeFastMutex(&g_rootDevicesMutex);
 
