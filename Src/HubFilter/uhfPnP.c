@@ -19,6 +19,14 @@ uhfPnPRemoveDevice(
     PUHF_DEVICE_EXT devExt,
     PIO_STACK_LOCATION ioSp);
 
+NTSTATUS 
+uhfPnPSurpriseRemoval(
+    PDEVICE_OBJECT DeviceObject,
+    PIRP Irp,
+    PUHF_DEVICE_EXT devExt,
+    PIO_STACK_LOCATION ioSp);
+
+
 NTSTATUS
 uhfPnPQueryDeviceRelations(
     PDEVICE_OBJECT DeviceObject,
@@ -26,12 +34,13 @@ uhfPnPQueryDeviceRelations(
     PUHF_DEVICE_EXT devExt,
     PIO_STACK_LOCATION ioSp);
 
-#pragma alloc(PAGE, uhfDispatchPnP)
-#pragma alloc(PAGE, uhfPnPRemoveDevice)
-#pragma alloc(PAGE, uhfPnPQueryDeviceRelations)
+#pragma alloc_text(PAGE, uhfDispatchPnP)
+#pragma alloc_text(PAGE, uhfPnPRemoveDevice)
+#pragma alloc_text(PAGE, uhfPnPSurpriseRemoval)
+#pragma alloc_text(PAGE, uhfPnPQueryDeviceRelations)
 
 NTSTATUS 
-uhfPnPPassThroughCompletion(
+uhfPnPFilterCompletion(
     PDEVICE_OBJECT DeviceObject,
     PIRP Irp,
     PVOID Context)
@@ -41,7 +50,6 @@ uhfPnPPassThroughCompletion(
     KeSetEvent(Event, IO_NO_INCREMENT, FALSE);
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
-
 
 NTSTATUS 
 uhfDispatchPnP(
@@ -79,10 +87,14 @@ uhfDispatchPnP(
     case IRP_MN_REMOVE_DEVICE:
         status = uhfPnPRemoveDevice(DeviceObject, Irp, devExt, ioSp);
         break;
+    case IRP_MN_SURPRISE_REMOVAL:
+        status = uhfPnPSurpriseRemoval(DeviceObject, Irp, devExt, ioSp);
+        break;
     case IRP_MN_QUERY_DEVICE_RELATIONS:
         status = uhfPnPQueryDeviceRelations(DeviceObject, Irp, devExt, ioSp);
         break;
-    case IRP_MN_QUERY_BUS_INFORMATION:
+    case IRP_MN_START_DEVICE:
+        DbgPrint("[uhf] IRP_MN_START_DEVICE(0x%p)\n", devExt->pdo);
         IoSkipCurrentIrpStackLocation(Irp);
         status = IoCallDriver(devExt->NextDevice, Irp);
         break;
@@ -122,15 +134,26 @@ uhfPnPRemoveDevice(
 }
 
 NTSTATUS 
-uhfQueryDeviceRelationIoCompletion(
+uhfPnPSurpriseRemoval(
     PDEVICE_OBJECT DeviceObject,
     PIRP Irp,
-    PVOID Context)
+    PUHF_DEVICE_EXT devExt,
+    PIO_STACK_LOCATION ioSp)
 {
-    PKEVENT Event = (PKEVENT)Context;
+    NTSTATUS status;
+    KEVENT event;
 
-    KeSetEvent(Event, IO_NO_INCREMENT, FALSE);
-    return STATUS_MORE_PROCESSING_REQUIRED;
+    IoCopyCurrentIrpStackLocationToNext(Irp);
+    KeInitializeEvent(&event, NotificationEvent, FALSE);
+    IoSetCompletionRoutine(Irp, uhfPnPFilterCompletion, &event, TRUE, TRUE, TRUE);
+    status = IoCallDriver(devExt->NextDevice, Irp);
+    if (status == STATUS_PENDING) {
+        KeWaitForSingleObject(&event, Executive, KernelMode, FALSE, NULL);
+    }
+    status = Irp->IoStatus.Status;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+    return status;
 }
 
 NTSTATUS
@@ -142,13 +165,14 @@ uhfPnPQueryDeviceRelations(
 {
     NTSTATUS status;
 
-    KEVENT Event;
-
     ULONG i;
+
+    KEVENT Event;
     PDEVICE_RELATIONS deviceRelations;
-    PWCHAR deviceName;
-    PWCHAR strIterator;
-    ULONG retLength;
+
+    PLIST_ENTRY link;
+    PUHF_DEVICE_EXT childDevExt;
+    BOOLEAN flg;
 
     PAGED_CODE();
 
@@ -168,16 +192,10 @@ uhfPnPQueryDeviceRelations(
 
     IoCopyCurrentIrpStackLocationToNext(Irp);
     IoSetCompletionRoutine(Irp, 
-                        uhfQueryDeviceRelationIoCompletion, 
+                        uhfPnPFilterCompletion, 
                         &Event, 
                         TRUE, TRUE, TRUE);
 
-    status = IoAcquireRemoveLock(&devExt->RemoveLock, Irp);
-    if (!NT_SUCCESS(status)) {
-        Irp->IoStatus.Status = status;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
-        return status;
-    }
     status = IoCallDriver(devExt->NextDevice, Irp);
     if (status == STATUS_PENDING) {
         KeWaitForSingleObject(&Event, 
@@ -186,7 +204,6 @@ uhfPnPQueryDeviceRelations(
                             FALSE,
                             NULL);
     }
-    IoReleaseRemoveLock(&devExt->RemoveLock, Irp);
 
     if (NT_SUCCESS(Irp->IoStatus.Status) && (Irp->IoStatus.Information != 0)) {
         deviceRelations = (PDEVICE_RELATIONS)Irp->IoStatus.Information;
@@ -195,7 +212,22 @@ uhfPnPQueryDeviceRelations(
                 uhfAddChildDevice(g_DriverObject, devExt, deviceRelations->Objects[i]);
             }
         }
-    } 
+
+        for (link = devExt->childs.Flink; link != &devExt->childs; link = link->Flink) {
+            childDevExt = CONTAINING_RECORD(link, UHF_DEVICE_EXT, siblings);
+            flg = FALSE;
+            for (i = 0; i < deviceRelations->Count; i++) {
+                if (childDevExt->pdo == deviceRelations->Objects[i]) {
+                    flg = TRUE;
+                    break;
+                }
+            }
+
+            if (!flg) {
+                DbgPrint("[uhf] MISSGING %p\n", childDevExt->pdo);
+            }
+        }
+    }
     status = Irp->IoStatus.Status;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 

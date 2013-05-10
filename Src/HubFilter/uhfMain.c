@@ -3,6 +3,12 @@
 #include "uhfMain.h"
 #include "uhfDevices.h"
 #include "uhfPnP.h"
+#include "uhfPower.h"
+
+NTSTATUS
+DriverEntry(
+    PDRIVER_OBJECT DriverObject,
+    PUNICODE_STRING RegistryPath);
 
 
 NTSTATUS 
@@ -10,7 +16,7 @@ uhfDispatchPassThrough(
     PDEVICE_OBJECT DeviceObject,
     PIRP Irp);
 
-#pragma alloc(INIT, DriverEntry)
+#pragma alloc_text(INIT, DriverEntry)
 
 PDRIVER_OBJECT g_DriverObject = NULL;
 
@@ -40,6 +46,7 @@ DriverEntry(
     }
 
     DriverObject->MajorFunction[IRP_MJ_PNP] = uhfDispatchPnP;
+    DriverObject->MajorFunction[IRP_MJ_POWER] = uhfDispatchPower;
 
     return STATUS_SUCCESS;
 }
@@ -57,16 +64,7 @@ uhfDispatchPassThrough(
     ASSERT(devExt->NextDevice);
 
     IoSkipCurrentIrpStackLocation(Irp);
-
-    status = IoAcquireRemoveLock(&devExt->RemoveLock, Irp);
-    if (!NT_SUCCESS(status)) {
-        Irp->IoStatus.Status = status;
-        IoCompleteRequest(Irp, IO_NO_INCREMENT);
-        return status;
-    }
-
     status = IoCallDriver(devExt->NextDevice, Irp);
-    IoReleaseRemoveLock(&devExt->RemoveLock, Irp);
 
     return status;
 }

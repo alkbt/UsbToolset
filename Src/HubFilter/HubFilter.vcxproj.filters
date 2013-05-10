@@ -27,6 +27,9 @@
     <ClCompile Include="uhfDevices.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="uhfPower.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="uhfDevices.h">
@@ -36,6 +39,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="uhfPnP.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="uhfPower.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

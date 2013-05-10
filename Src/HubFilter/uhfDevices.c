@@ -37,19 +37,25 @@ VOID
 uhfRemovePdoFromChildList(
     PUHF_DEVICE_EXT devExt);
 
-#pragma alloc(PAGE, uhfAddDevice)
-#pragma alloc(PAGE, uhfDeleteDevice)
-#pragma alloc(PAGE, uhfGetPdoStringProperty)
-#pragma alloc(PAGE, uhfQueryPdoText)
-#pragma alloc(PAGE, uhfQueryPdoIds)
-#pragma alloc(PAGE, uhfBuildPdoIdentifiers)
+VOID
+uhfDumpDevicesTree(VOID);
 
-#pragma alloc(PAGE, uhfIsPdoInGlobalList)
-#pragma alloc(PAGE, uhfAddPdoInGlobalList)
-#pragma alloc(PAGE, uhfRemovePdoFromGlobalList)
-#pragma alloc(PAGE, uhfIsPdoInChildList)
-#pragma alloc(PAGE, uhfAddPdoToChildList)
-#pragma alloc(PAGE, uhfRemovePdoFromChildList)
+
+#pragma alloc_text(PAGE, uhfAddDevice)
+#pragma alloc_text(PAGE, uhfDeleteDevice)
+#pragma alloc_text(PAGE, uhfGetPdoStringProperty)
+#pragma alloc_text(PAGE, uhfQueryPdoText)
+#pragma alloc_text(PAGE, uhfQueryPdoIds)
+#pragma alloc_text(PAGE, uhfBuildPdoIdentifiers)
+
+#pragma alloc_text(PAGE, uhfIsPdoInGlobalList)
+#pragma alloc_text(PAGE, uhfAddPdoInGlobalList)
+#pragma alloc_text(PAGE, uhfRemovePdoFromGlobalList)
+#pragma alloc_text(PAGE, uhfIsPdoInChildList)
+#pragma alloc_text(PAGE, uhfAddPdoToChildList)
+#pragma alloc_text(PAGE, uhfRemovePdoFromChildList)
+
+#pragma alloc(PAGE, uhfDumpDevicesTree)
 
 LIST_ENTRY g_pdoList;
 FAST_MUTEX g_pdoListMutex;
@@ -104,9 +110,6 @@ uhfAddDevice(
         ExInitializeFastMutex(&fidoExt->fastMutex);
         InitializeListHead(&fidoExt->childs);
         
-        uhfAddPdoInGlobalList(fidoExt);
-        uhfAddPdoToChildList(NULL, fidoExt);
-
         IoInitializeRemoveLock(&fidoExt->RemoveLock, UHF_DEV_EXT_TAG, 0, 0);
 
         status = uhfBuildPdoIdentifiers(pdo, fido, fidoExt);
@@ -116,8 +119,11 @@ uhfAddDevice(
 
         fidoExt->NextDevice = IoAttachDeviceToDeviceStack(fido, pdo);
 
-        fido->Flags = pdo->Flags & (DO_DIRECT_IO | DO_BUFFERED_IO | DO_POWER_PAGABLE);        
+        fido->Flags = pdo->Flags & (DO_POWER_INRUSH | DO_POWER_PAGABLE | DO_DIRECT_IO | DO_BUFFERED_IO | DO_POWER_PAGABLE);        
         fido->Flags &= ~DO_DEVICE_INITIALIZING;
+
+        uhfAddPdoInGlobalList(fidoExt);
+        uhfAddPdoToChildList(NULL, fidoExt);
 
         status = STATUS_SUCCESS;
     } __finally {
@@ -193,9 +199,6 @@ uhfAddChildDevice(
         ExInitializeFastMutex(&fidoExt->fastMutex);
         InitializeListHead(&fidoExt->childs);
 
-        uhfAddPdoInGlobalList(fidoExt);
-        uhfAddPdoToChildList(parentDevExt, fidoExt);
-
         IoInitializeRemoveLock(&fidoExt->RemoveLock, UHF_DEV_EXT_TAG, 0, 0);
 
         status = uhfBuildPdoIdentifiers(pdo, fido, fidoExt);
@@ -205,8 +208,11 @@ uhfAddChildDevice(
 
         fidoExt->NextDevice = IoAttachDeviceToDeviceStack(fido, pdo);
 
-        fido->Flags = pdo->Flags & (DO_DIRECT_IO | DO_BUFFERED_IO | DO_POWER_PAGABLE);        
+        fido->Flags = pdo->Flags & (DO_POWER_INRUSH | DO_POWER_PAGABLE | DO_DIRECT_IO | DO_BUFFERED_IO | DO_POWER_PAGABLE);        
         fido->Flags &= ~DO_DEVICE_INITIALIZING;
+
+        uhfAddPdoInGlobalList(fidoExt);
+        uhfAddPdoToChildList(parentDevExt, fidoExt);
 
         status = STATUS_SUCCESS;
     } __finally {
@@ -652,6 +658,59 @@ uhfRemovePdoFromGlobalList(
     ExReleaseFastMutex(&g_pdoListMutex);
 }
 
+VOID 
+uhfDumpTreeBrunch(
+    PUHF_DEVICE_EXT devExt,
+    PWCHAR prefix)
+{
+    PLIST_ENTRY link;
+    PUHF_DEVICE_EXT childDevExt;
+
+    WCHAR localPrefix[256];
+
+    PAGED_CODE();
+    ASSERT(devExt);
+    ASSERT(prefix);
+
+    DbgPrint("%ws 0x%p:\"%ws\"; \"%ws\"\n", 
+            prefix, 
+            devExt->pdo, 
+            devExt->pdoDescription.deviceId.Buffer, 
+            devExt->pdoDescription.description.Buffer);
+    RtlCopyMemory(localPrefix, prefix, sizeof(localPrefix));
+    localPrefix[wcslen(localPrefix)] = '\t';
+    ExAcquireFastMutex(&devExt->fastMutex);
+    for (link = devExt->childs.Flink; link != &devExt->childs; link = link->Flink) {
+        childDevExt = CONTAINING_RECORD(link, UHF_DEVICE_EXT, siblings);
+        
+        uhfDumpTreeBrunch(childDevExt, localPrefix);
+    }
+    ExReleaseFastMutex(&devExt->fastMutex);
+}
+
+VOID
+uhfDumpDevicesTree(VOID)
+{
+    PLIST_ENTRY link;
+    PUHF_DEVICE_EXT devExt;
+
+    WCHAR prefix[256];
+
+    PAGED_CODE();
+
+    DbgPrint("\n[uhf] Device Tree\n");
+    RtlZeroMemory(prefix, sizeof(prefix));
+
+    prefix[0] = '\t';
+
+    ExAcquireFastMutex(&g_rootDevicesMutex);
+    for (link = g_rootDevices.Flink; link != &g_rootDevices; link = link->Flink) {
+        devExt = CONTAINING_RECORD(link, UHF_DEVICE_EXT, siblings);
+        uhfDumpTreeBrunch(devExt, prefix);
+    }
+    ExReleaseFastMutex(&g_rootDevicesMutex);
+}
+
 PUHF_DEVICE_EXT 
 uhfIsPdoInChildList(
     PUHF_DEVICE_EXT devExt)
@@ -711,6 +770,8 @@ uhfAddPdoToChildList(
         ExReleaseFastMutex(&g_rootDevicesMutex);
         devExt->parent = NULL;
     }
+
+    uhfDumpDevicesTree();
 }
 
 VOID 
@@ -730,4 +791,6 @@ uhfRemovePdoFromChildList(
         RemoveEntryList(&devExt->siblings);
         ExReleaseFastMutex(&g_rootDevicesMutex);
     }
+
+    uhfDumpDevicesTree();
 }
