@@ -3,7 +3,6 @@ Signature="$WINDOWS NT$"
 Class=Sample
 ClassGuid={6423ABC6-8058-46BD-A8F3-8BBE7D19FAD0}
 Provider=%WK%
-DriverVer=10/05/2013,1.00.000
 
 ; ================= Class section =====================
 [ClassInstall32]

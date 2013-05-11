@@ -4,6 +4,7 @@
 #include "ulkDevices.h"
 
 #pragma alloc_text(PAGE, ulkAddDevice)
+#pragma alloc_text(PAGE, ulkDeleteDevice)
 
 NTSTATUS 
 ulkAddDevice(
@@ -16,7 +17,9 @@ ulkAddDevice(
     PULK_DEV_EXT devExt;
 
     PAGED_CODE();
-
+#ifdef DBG
+    DbgPrint("[ulk] AddDevice(0x%x)\n", pdo);
+#endif
     __try {
         status = IoCreateDevice(driverObject, 
                                 sizeof(ULK_DEV_EXT), 
@@ -43,17 +46,35 @@ ulkAddDevice(
             status = STATUS_INTERNAL_ERROR;
             __leave;
         }
+
+        fdo->Flags = pdo->Flags & (DO_BUFFERED_IO | DO_DIRECT_IO | DO_POWER_INRUSH | DO_POWER_PAGABLE);
+        fdo->Flags &= ~DO_DEVICE_INITIALIZING;
     } __finally {
         if (!NT_SUCCESS(status)) {
             if (fdo) {
-                if (devExt && devExt->lowerDevice) {
-                    IoDetachDevice(devExt->lowerDevice);
-                }
-
-                IoDeleteDevice(fdo);
+                ulkDeleteDevice(fdo);
             }
         }
     }
     return STATUS_SUCCESS;
 }
 
+VOID 
+ulkDeleteDevice(
+    PDEVICE_OBJECT deviceObject)
+{
+    PULK_DEV_EXT devExt;
+
+    devExt = (PULK_DEV_EXT)deviceObject->DeviceExtension;
+
+#ifdef DBG
+    DbgPrint("[ulk] AddDevice(0x%x)\n", devExt->pdo);
+#endif
+
+    PAGED_CODE();
+
+    if (devExt->lowerDevice) {
+        IoDetachDevice(devExt->lowerDevice);
+    }
+    IoDeleteDevice(deviceObject);
+}

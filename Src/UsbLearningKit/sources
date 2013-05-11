@@ -4,5 +4,5 @@ DRIVERTYPE=WDM
 
 C_DEFINES=$(C_DEFINES) -DDBG
 
-SOURCES= ulkMain.c ulkDevices.c ulkPnp.c ntstatstr.c
+SOURCES= ulkMain.c ulkDevices.c ulkPnp.c ulkPower.c ntstatstr.c
 

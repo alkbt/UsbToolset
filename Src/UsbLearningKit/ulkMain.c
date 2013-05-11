@@ -2,6 +2,7 @@
 
 #include "ulkDevices.h"
 #include "ulkPnp.h"
+#include "ulkPower.h"
 
 NTSTATUS
 DriverEntry(
@@ -38,6 +39,7 @@ DriverEntry(
     }
 
     driverObject->MajorFunction[IRP_MJ_PNP] = ulkDispatchPnp;
+    driverObject->MajorFunction[IRP_MJ_POWER] = ulkDispatchPower;
 
     return STATUS_SUCCESS;
 }

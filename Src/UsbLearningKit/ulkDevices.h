@@ -14,5 +14,8 @@ NTSTATUS ulkAddDevice(
   PDRIVER_OBJECT driver,
   PDEVICE_OBJECT pdo);
 
+VOID 
+ulkDeleteDevice(
+    PDEVICE_OBJECT deviceObject);
 
 #endif //__ULK_DEVICES_H__

@@ -38,7 +38,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <NMakeOutput>
     </NMakeOutput>
-    <NMakePreprocessorDefinitions>WIN32;_DEBUG;DBG;_X86_;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>
+    <NMakePreprocessorDefinitions>WIN32;_DEBUG;DBG;_X86_</NMakePreprocessorDefinitions>
     <NMakeBuildCommandLine>ddkbuild.cmd -W7 chk .</NMakeBuildCommandLine>
     <OutDir>.\objchk_win7_x86\i386</OutDir>
     <IntDir>.\objchk_win7_x86\i386</IntDir>
@@ -51,18 +51,17 @@
   <ItemDefinitionGroup>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <Text Include="readme.txt" />
-  </ItemGroup>
-  <ItemGroup>
     <ClCompile Include="ntstatstr.c" />
     <ClCompile Include="ulkDevices.c" />
     <ClCompile Include="ulkMain.c" />
     <ClCompile Include="ulkPnp.c" />
+    <ClCompile Include="ulkPower.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ulkDevices.h" />
     <ClInclude Include="ulkMain.h" />
     <ClInclude Include="ulkPnp.h" />
+    <ClInclude Include="ulkPower.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

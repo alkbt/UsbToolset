@@ -15,9 +15,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="readme.txt" />
-  </ItemGroup>
-  <ItemGroup>
     <ClCompile Include="ulkMain.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -30,6 +27,9 @@
     <ClCompile Include="ulkPnp.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ulkPower.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ulkDevices.h">
@@ -39,6 +39,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ulkPnp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ulkPower.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
