@@ -1,0 +1,60 @@
+[Version]
+Signature="$WINDOWS NT$"
+Class=Sample
+ClassGuid={6423ABC6-8058-46BD-A8F3-8BBE7D19FAD0}
+Provider=%WK%
+DriverVer=10/05/2013,1.00.000
+
+; ================= Class section =====================
+[ClassInstall32]
+Addreg=SampleClassReg     
+
+[SampleClassReg]
+HKR,,,0,%ClassName%
+HKR,,Icon,,-5
+
+[DestinationDirs]
+DefaultDestDir = 12
+; ================= Device section =====================
+
+[Manufacturer]
+%MfgName%=WhoKnows,NT$ARCH$
+
+; For Win2K
+[WhoKnows]
+%USB\VID_0547&PID_1002.DeviceDesc%=ulk.Dev, USB\VID_0547&PID_1002   ; OSR USB-FX
+
+; For XP and later
+[WhoKnows.NT$ARCH$]
+%USB\VID_0547&PID_1002.DeviceDesc%=ulk.Dev, USB\VID_0547&PID_1002   ; OSR USB-FX
+
+[ulk.Dev.NT]
+CopyFiles=ulk.Files.Ext
+
+[ulk.Dev.NT.Services]
+Addservice = ulk, 0x00000002, ulk.AddService
+
+[ulk.AddService]
+DisplayName    = %ulk.SvcDesc%
+ServiceType    = 1                  ; SERVICE_KERNEL_DRIVER
+StartType      = 3                  ; SERVICE_DEMAND_START
+ErrorControl   = 1                  ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %10%\System32\Drivers\ulk.sys
+LoadOrderGroup = Base
+
+[ulk.Files.Ext]
+ulk.sys
+
+[SourceDisksNames]
+1=%Disk_Description%,,,
+
+[SourceDisksFiles]
+ulk.sys = 1
+
+[Strings]
+WK="WhoKnows"
+MfgName         = "Intel/OSR"
+Disk_Description= "OSR Learning Kit Installation Disk"
+ulk.SvcDesc = "WDM Sample Driver for OSR Learning Kit"
+ClassName       = "Sample Device"
+USB\VID_0547&PID_1002.DeviceDesc="WDM Sample for OSR USB-FX2 Learning Kit"

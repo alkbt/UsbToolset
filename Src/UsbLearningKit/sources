@@ -1,0 +1,8 @@
+TARGETNAME=ulk
+TARGETTYPE=DRIVER
+DRIVERTYPE=WDM
+
+C_DEFINES=$(C_DEFINES) -DDBG
+
+SOURCES= ulkMain.c ulkDevices.c ulkPnp.c ntstatstr.c
+

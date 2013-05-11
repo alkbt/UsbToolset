@@ -8,3 +8,9 @@ obj
 /bin/*.sys
 
 /Src/*.suo
+
+*.user
+
+*.log
+
+/Src/*.opensdf

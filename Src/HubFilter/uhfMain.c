@@ -54,7 +54,7 @@ DriverEntry(
 NTSTATUS 
 uhfDispatchPassThrough(
     PDEVICE_OBJECT DeviceObject,
-    PIRP Irp)
+    PIRP irp)
 {
     NTSTATUS status;
 
@@ -63,8 +63,18 @@ uhfDispatchPassThrough(
     devExt = (PUHF_DEVICE_EXT)DeviceObject->DeviceExtension;
     ASSERT(devExt->NextDevice);
 
-    IoSkipCurrentIrpStackLocation(Irp);
-    status = IoCallDriver(devExt->NextDevice, Irp);
+    status = IoAcquireRemoveLock(&devExt->RemoveLock, irp);
+    if (!NT_SUCCESS(status)) {
+        irp->IoStatus.Status = status;
+        irp->IoStatus.Information = 0;
+        IoCompleteRequest(irp, IO_NO_INCREMENT);
+        return status;
+    }
+
+    IoSkipCurrentIrpStackLocation(irp);
+    status = IoCallDriver(devExt->NextDevice, irp);
+
+    IoReleaseRemoveLock(&devExt->RemoveLock, irp);
 
     return status;
 }
