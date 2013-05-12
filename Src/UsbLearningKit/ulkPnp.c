@@ -17,6 +17,7 @@ ulkDispatchPnp(
 
     USHORT minorFn;
     BOOLEAN passThrough = TRUE;
+
     PAGED_CODE();
 
     ioSp = IoGetCurrentIrpStackLocation(irp);
@@ -38,6 +39,8 @@ ulkDispatchPnp(
     switch (minorFn) {
     case IRP_MN_START_DEVICE:
         DbgPrint("[ulk] IRP_MN_START_DEVICE(0x%p)\n", deviceObject);
+        status = uhfPnpStartsDevice(deviceObject, irp, devExt, ioSp);
+        passThrough = FALSE;
         break;
     case IRP_MN_QUERY_REMOVE_DEVICE:
         DbgPrint("[ulk] IRP_MN_QUERY_REMOVE_DEVICE(0x%p)\n", deviceObject);
@@ -69,14 +72,8 @@ ulkDispatchPnp(
     case IRP_MN_QUERY_RESOURCES:
         DbgPrint("[ulk] IRP_MN_QUERY_RESOURCES(0x%p)\n", deviceObject);
         break;
-    case IRP_MN_QUERY_RESOURCE_REQUIREMENTS:
-        DbgPrint("[ulk] IRP_MN_QUERY_RESOURCE_REQUIREMENTS(0x%p)\n", deviceObject);
-        break;
     case IRP_MN_QUERY_DEVICE_TEXT:
         DbgPrint("[ulk] IRP_MN_QUERY_DEVICE_TEXT(0x%p)\n", deviceObject);
-        break;
-    case IRP_MN_FILTER_RESOURCE_REQUIREMENTS:
-        DbgPrint("[ulk] IRP_MN_FILTER_RESOURCE_REQUIREMENTS(0x%p)\n", deviceObject);
         break;
     case IRP_MN_READ_CONFIG:
         DbgPrint("[ulk] IRP_MN_READ_CONFIG(0x%p)\n", deviceObject);
@@ -105,6 +102,14 @@ ulkDispatchPnp(
     case IRP_MN_SURPRISE_REMOVAL:
         DbgPrint("[ulk] IRP_MN_SURPRISE_REMOVAL(0x%p)\n", deviceObject);
         break;
+
+    case IRP_MN_QUERY_RESOURCE_REQUIREMENTS:
+        DbgPrint("[ulk] IRP_MN_QUERY_RESOURCE_REQUIREMENTS(0x%p) [handled by bus]\n", deviceObject);
+        break;
+    case IRP_MN_FILTER_RESOURCE_REQUIREMENTS:
+        DbgPrint("[ulk] IRP_MN_FILTER_RESOURCE_REQUIREMENTS(0x%p) [we don't need resources]\n", deviceObject);
+        break;
+
     }
 
     if (passThrough) {
@@ -120,9 +125,50 @@ ulkDispatchPnp(
 }
 
 NTSTATUS 
-uhfPnpRemoveDevice(
+uhfPnpFilterCompletion(
     PDEVICE_OBJECT DeviceObject,
     PIRP Irp,
+    PVOID Context)
+{
+    PKEVENT Event = (PKEVENT)Context;
+
+    KeSetEvent(Event, IO_NO_INCREMENT, FALSE);
+    return STATUS_MORE_PROCESSING_REQUIRED;
+}
+
+NTSTATUS 
+uhfPnpStartsDevice(
+    PDEVICE_OBJECT deviceObject,
+    PIRP irp,
+    PULK_DEV_EXT devExt,
+    PIO_STACK_LOCATION ioSp)
+{
+    NTSTATUS status;
+    
+    KEVENT event;
+
+    PAGED_CODE();
+
+    ASSERT(devExt->lowerDevice);
+
+    irp->IoStatus.Status = STATUS_SUCCESS;
+    IoCopyCurrentIrpStackLocationToNext(irp);
+    KeInitializeEvent(&event, NotificationEvent, FALSE);
+    IoSetCompletionRoutine(irp, uhfPnpFilterCompletion, &event, TRUE, TRUE, TRUE);
+
+    status = IoCallDriver(devExt->lowerDevice, irp);
+    if (status == STATUS_PENDING) {
+        KeWaitForSingleObject(&event, Executive, KernelMode, FALSE, NULL);
+    }
+
+    status = irp->IoStatus.Status;
+    return status;
+}
+
+NTSTATUS 
+uhfPnpRemoveDevice(
+    PDEVICE_OBJECT deviceObject,
+    PIRP irp,
     PULK_DEV_EXT devExt,
     PIO_STACK_LOCATION ioSp)
 {
@@ -130,12 +176,12 @@ uhfPnpRemoveDevice(
 
     PAGED_CODE();
 
-    IoSkipCurrentIrpStackLocation(Irp);
+    IoSkipCurrentIrpStackLocation(irp);
 
-    status = IoCallDriver(devExt->lowerDevice, Irp);
-    IoReleaseRemoveLockAndWait(&devExt->removeLock, Irp);
+    status = IoCallDriver(devExt->lowerDevice, irp);
+    IoReleaseRemoveLockAndWait(&devExt->removeLock, irp);
     
-    ulkDeleteDevice(DeviceObject);
+    ulkDeleteDevice(deviceObject);
 
     return status;
 }
