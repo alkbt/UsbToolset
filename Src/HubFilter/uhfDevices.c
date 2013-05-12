@@ -107,6 +107,7 @@ uhfAddDevice(
 
         fidoExt->DeviceRole = UHF_DEVICE_ROLE_HUB_FiDO;
         fidoExt->pdo = pdo;
+        fidoExt->pdoState = Stopped;
         ExInitializeFastMutex(&fidoExt->fastMutex);
         InitializeListHead(&fidoExt->childs);
         
@@ -195,6 +196,7 @@ uhfAddChildDevice(
         fidoExt = (PUHF_DEVICE_EXT)fido->DeviceExtension;
         fidoExt->DeviceRole = UHF_DEVICE_ROLE_DEVICE_FiDO;
         fidoExt->pdo = pdo;
+        fidoExt->pdoState = Stopped;
 
         ExInitializeFastMutex(&fidoExt->fastMutex);
         InitializeListHead(&fidoExt->childs);
@@ -658,6 +660,26 @@ uhfRemovePdoFromGlobalList(
     ExReleaseFastMutex(&g_pdoListMutex);
 }
 
+PWCHAR
+uhfPdoStateToStr(
+    UHF_PDO_STATE state)
+{
+    switch(state) {
+    case Stopped:
+        return L"Stopped";
+    case Working:
+        return L"Working";
+    case PendingStop:
+        return L"PendingStop";
+    case PendingRemove:
+        return L"PendingRemove";
+    case SupriseRemoved:
+        return L"SupriseRemoved";
+    default:
+        return L"ERROR";
+    }
+}
+
 VOID 
 uhfDumpTreeBrunch(
     PUHF_DEVICE_EXT devExt,
@@ -672,8 +694,9 @@ uhfDumpTreeBrunch(
     ASSERT(devExt);
     ASSERT(prefix);
 
-    DbgPrint("%ws 0x%p:\"%ws\"; \"%ws\"\n", 
+    DbgPrint("%ws [%ws] 0x%p:\"%ws\"; \"%ws\"\n", 
             prefix, 
+            uhfPdoStateToStr(devExt->pdoState),
             devExt->pdo, 
             devExt->pdoDescription.deviceId.Buffer, 
             devExt->pdoDescription.description.Buffer);

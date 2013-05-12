@@ -22,6 +22,14 @@ typedef struct _UHF_PDO_DESCRIPTION {
     UNICODE_STRING location;
 } UHF_PDO_DESCRIPTION, *PUHF_PDO_DESCRIPTION;
 
+typedef enum _UHF_PDO_STATE {
+    Stopped,
+    Working,
+    PendingStop,
+    PendingRemove,
+    SupriseRemoved
+} UHF_PDO_STATE;
+
 typedef struct _UHF_DEVICE_EXT {
     LIST_ENTRY gLink;
     LIST_ENTRY childs;
@@ -37,6 +45,7 @@ typedef struct _UHF_DEVICE_EXT {
 
     PDEVICE_OBJECT pdo;
 
+    UHF_PDO_STATE pdoState;
     UHF_PDO_DESCRIPTION pdoDescription;
 } UHF_DEVICE_EXT, *PUHF_DEVICE_EXT;
 
@@ -81,5 +90,8 @@ uhfQueryPdoText(
 PUHF_DEVICE_EXT
 uhfIsPdoInGlobalList(
     PDEVICE_OBJECT pdo);
+
+VOID
+uhfDumpDevicesTree(VOID);
 
 #endif //__UHF_DEVICES_H__

@@ -45,7 +45,7 @@ DriverEntry(
         DriverObject->MajorFunction[i] = uhfDispatchPassThrough;
     }
 
-    DriverObject->MajorFunction[IRP_MJ_PNP] = uhfDispatchPnP;
+    DriverObject->MajorFunction[IRP_MJ_PNP] = uhfDispatchPnp;
     DriverObject->MajorFunction[IRP_MJ_POWER] = uhfDispatchPower;
 
     return STATUS_SUCCESS;

@@ -2,7 +2,7 @@
 #define __UHF_PNP_H__
 
 NTSTATUS 
-uhfDispatchPnP(
+uhfDispatchPnp(
     PDEVICE_OBJECT DeviceObject,
     PIRP Irp);
 
