@@ -14,3 +14,7 @@ obj
 *.log
 
 /Src/*.opensdf
+*.suo
+*.db
+*.db-shm
+*.db-wal
